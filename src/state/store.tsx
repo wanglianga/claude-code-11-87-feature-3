@@ -10,6 +10,7 @@ import type {
   Receipt,
   ReceiptDraft,
   ReceiptType,
+  RecurrenceDataset,
   ReviewComment,
   ServerState,
 } from '../types';
@@ -21,10 +22,19 @@ import { ledgerKeyOf } from '../domain/receipts';
 import { mergeOfflineComments, resolveCommentConflict } from '../domain/merge';
 import { applyReReviewFlag } from '../domain/merge';
 import { uid } from '../domain/hash';
+import { buildRecurrenceDataset } from '../domain/seed-recurrence';
 import { workerApi } from './workerClient';
 import { idbBulkPut, idbDelete, idbGetAll, idbPut, kvGet, kvSet, STORES, wipeAll } from '../db/idb';
 
-export type TabKey = 'scenario' | 'studio' | 'packages' | 'review' | 'receipts' | 'history' | 'contracts';
+export type TabKey =
+  | 'scenario'
+  | 'studio'
+  | 'packages'
+  | 'review'
+  | 'receipts'
+  | 'recurrence'
+  | 'history'
+  | 'contracts';
 
 interface Notice {
   kind: 'ok' | 'err' | 'info';
@@ -43,6 +53,8 @@ interface StoreState {
   receipts: Receipt[];
   packages: DeliveryPackage[];
   audit: AuditEvent[];
+  /** 缺陷复发率数据集（资产谱系 + 修复账 + 多期检出） */
+  recurrence: RecurrenceDataset | null;
   notice: Notice | null;
 }
 
@@ -114,6 +126,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     receipts: [],
     packages: [],
     audit: [],
+    recurrence: null,
     notice: null,
   });
 
@@ -132,6 +145,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         attachments = getAttachments();
         await kvSet('server', server);
         await kvSet('attachments', attachments);
+      }
+
+      // 复发率数据集：独立初始化并持久化，与交付契约数据互不影响
+      let recurrence = await kvGet<RecurrenceDataset>('recurrence');
+      if (!recurrence) {
+        recurrence = buildRecurrenceDataset();
+        await kvSet('recurrence', recurrence);
       }
 
       let [localComments, drafts, receipts, packages, audit] = await Promise.all([
@@ -164,6 +184,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         receipts,
         packages,
         audit,
+        recurrence,
         sessionAccountId: sessionAccountId ?? null,
       }));
     })();

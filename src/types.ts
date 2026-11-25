@@ -449,6 +449,207 @@ export interface AuditEvent {
   };
 }
 
+// ---------------- 缺陷复发率数据集 ----------------
+//
+// 目标：同一修复位置下一轮仍检出裂缝，可能是①原缺陷未修复、②修复后复发、
+// ③施工接缝附近的新缺陷。必须先把不同期间的构件（管段/盖梁等）谱系映射到
+// 统一的局部里程（米），再用「修复账」的施工范围/材料/完成时点/验收证据，
+// 把前后两期检测的区间位置、形态与修复范围组成候选，分别统计确认复发、
+// 疑似复发与新缺陷，并给出 12 个月复发比例及其统计区间。
+
+/** 构件/管段类型 */
+export type AssetKind = 'box_girder' | 'pier_cap' | 'deck_slab' | 'pipe_segment' | 'wall';
+
+/** 资产谱系节点：某检测期内一个构件，带统一局部里程区间（米） */
+export interface AssetNode {
+  /** 期内构件主键；改造后可能被重编（如拆分/合并产生新主键） */
+  assetId: string;
+  periodId: string;
+  label: string;
+  kind: AssetKind;
+  /** 谱系稳定键：同一结构体经拆分/合并后仍可追溯到同一谱系 */
+  lineageKey: string;
+  /** 统一局部里程（米），沿结构纵向，跨期连续可比 */
+  unifiedStartM: number;
+  unifiedEndM: number;
+  /** 拆分/合并来源的父构件主键；original/retained 可为空数组或自引用 */
+  derivedFrom: string[];
+  derivation: 'original' | 'retained' | 'split' | 'merge';
+}
+
+export interface InspectionPeriod {
+  periodId: string;
+  label: string;
+  inspectedAt: string;
+  note?: string;
+}
+
+/** 裂缝在某一构件上的区段（构件被拆分后，一条裂缝可横跨多个构件） */
+export interface FindingSegment {
+  assetId: string;
+  /** 相对该构件起点的纵向偏移（米） */
+  fromOffsetM: number;
+  toOffsetM: number;
+}
+
+export type CrackMorphology = 'diagonal' | 'transverse' | 'longitudinal' | 'map_crack' | 'joint';
+
+/** 一次检测的一条逻辑裂缝（可含跨多个构件的区段） */
+export interface InspectionFinding {
+  findingId: string;
+  periodId: string;
+  label: string;
+  morphology: CrackMorphology;
+  /** 裂缝走向（度，相对构件纵轴 0°=纵向、90°=横向） */
+  orientationDeg: number;
+  /** 横向偏移（米，沿构件表面，用以区分“同里程但不同位置”的邻近裂缝） */
+  transverseOffsetM: number;
+  widthMm: number | null;
+  lengthM: number;
+  measuredAt: string;
+  segments: FindingSegment[];
+}
+
+export type RepairStatus = 'accepted' | 'pending' | 'rejected';
+
+export interface AcceptanceEvidence {
+  evidenceId: string;
+  kind: 'material_cert' | 'construction_record' | 'acceptance_photo' | 'third_party';
+  label: string;
+  /** 证据内容 SHA-256（演示环境由内容文本计算） */
+  sha256Ref: string;
+}
+
+/** 修复账：一条针对某原缺陷的修复记录 */
+export interface RepairRecord {
+  repairId: string;
+  /** 目标原缺陷 */
+  findingId: string;
+  /** 施工所属期（原缺陷所在检测期） */
+  periodId: string;
+  /** 施工范围（统一局部里程，米）；可能只覆盖原裂缝的一部分 */
+  scope: { unifiedStartM: number; unifiedEndM: number };
+  material: string;
+  completedAt: string;
+  /** 验收时点；null 表示尚未验收（不计入复发率分母） */
+  acceptedAt: string | null;
+  status: RepairStatus;
+  acceptanceEvidence: AcceptanceEvidence[];
+}
+
+export interface RecurrenceDataset {
+  projectId: string;
+  structureLabel: string;
+  /** 统计评估时点：判断随访是否满 12 个月 */
+  evaluationAt: string;
+  /** 复发观察窗口（月） */
+  windowMonths: number;
+  periods: InspectionPeriod[];
+  assets: AssetNode[];
+  findings: InspectionFinding[];
+  repairs: RepairRecord[];
+}
+
+export type MatchStrategy = 'deterministic' | 'probabilistic';
+
+export type RecurrenceClass =
+  | 'confirmed_recurrence'
+  | 'suspected_recurrence'
+  | 'new_defect'
+  | 'residual_unrepaired'
+  | 'unmatched';
+
+/** 一个候选匹配（确定性/概率匹配都会保留全部候选以传播不确定性） */
+export interface FindingMatchCandidate {
+  repairId: string;
+  originalFindingId: string;
+  /** 概率匹配得分（0..1），确定性匹配时仍计算以供复核 */
+  probability: number;
+  /** 构件主键 + 线性里程容差是否命中 */
+  deterministicKeyMatch: boolean;
+  chainageGapM: number;
+  chainageOverlapM: number;
+  /** 检出区段落在修复施工范围内的比例 */
+  scopeCoverage: number;
+  /** 检出区段与原缺陷区段的重叠比例 */
+  originalOverlap: number;
+  transverseGapM: number;
+  orientationDiffDeg: number;
+  morphologyMatch: boolean;
+  appearedAfterAcceptance: boolean;
+  /** 自验收到本次检出的月数 */
+  recurrenceMonths: number | null;
+  notes: string[];
+}
+
+export interface FindingClassification {
+  postFindingId: string;
+  label: string;
+  periodId: string;
+  unifiedStartM: number;
+  unifiedEndM: number;
+  segmentCount: number;
+  strategy: MatchStrategy;
+  bestRepairId: string | null;
+  bestOriginalFindingId: string | null;
+  cls: RecurrenceClass;
+  probability: number | null;
+  /** 匹配不确定性（0..1），候选越分散或概率越低越大 */
+  uncertainty: number;
+  /** 保留全部候选（含被否决的），供人工复核 */
+  candidates: FindingMatchCandidate[];
+  recurrenceMonths: number | null;
+  withinWindow: boolean | null;
+  reason: string;
+}
+
+export interface RecurrenceStat {
+  cohortSize: number;
+  confirmedWithin12: number;
+  suspectedWithin12: number;
+  newDefect: number;
+  residual: number;
+  none: number;
+  lateRecurrence: number;
+  matchedRepairs: number;
+  confirmedRate: number;
+  suspectedRate: number;
+  combinedRate: number;
+  confirmedCI: { low: number; high: number };
+  suspectedCI: { low: number; high: number };
+  combinedCI: { low: number; high: number };
+  medianRecurrenceMonths: number | null;
+  immature: number;
+  pending: number;
+  excludedNotAccepted: number;
+}
+
+export interface AssetMapRow {
+  assetId: string;
+  periodId: string;
+  label: string;
+  lineageKey: string;
+  unifiedStartM: number;
+  unifiedEndM: number;
+  derivation: AssetNode['derivation'];
+  derivedFrom: string[];
+}
+
+export interface LineageCheck {
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface RecurrenceAnalysis {
+  strategy: MatchStrategy;
+  assetMap: AssetMapRow[];
+  lineageChecks: LineageCheck[];
+  lineageOk: boolean;
+  classifications: FindingClassification[];
+  stats: RecurrenceStat;
+}
+
 // ---------------- 持久化根状态 ----------------
 
 export interface ServerState {

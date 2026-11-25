@@ -9,6 +9,7 @@ import Studio from './components/Studio';
 import Packages from './components/Packages';
 import Review from './components/Review';
 import Receipts from './components/Receipts';
+import Recurrence from './components/Recurrence';
 import History from './components/History';
 import Contracts from './components/Contracts';
 import { Toggle } from './components/ui';
@@ -19,6 +20,7 @@ const TABS: { key: TabKey; label: string; ico: string; title: string; crumb: str
   { key: 'packages', label: '签名交付包', ico: '📦', title: '物化包与释放闸门', crumb: '固定报告修订与许可版本 · 包校验 · 重复交付' },
   { key: 'review', label: '离线审阅', ico: '✍️', title: '离线审阅工作区', crumb: '带基线版本的意见 / 回执草案 · 按意见ID合并' },
   { key: 'receipts', label: '回执账', ico: '🧾', title: '交付回执账本', crumb: '传输 / 解析 / 语义确认 / 质疑 / 更正 · 冲突裁定' },
+  { key: 'recurrence', label: '缺陷复发率', ico: '📈', title: '缺陷复发率数据集', crumb: '资产谱系统一里程 · 跨期匹配 · 确认复发/疑似复发/新缺陷 · 12 个月比例' },
   { key: 'history', label: '版本与审计', ico: '🕓', title: '修订链 · 审阅历史 · 审计账本', crumb: '签名修订1保留 · 审计摘要不随授权撤销消失' },
   { key: 'contracts', label: '契约与授权', ico: '📐', title: '字段契约与授权交集', crumb: '类型 / 单位 / 精度 / 检出限 / 空值 / 枚举 / 来源 / 角色' },
 ];
@@ -142,6 +144,7 @@ export default function App() {
           {s.tab === 'packages' && <Packages />}
           {s.tab === 'review' && <Review />}
           {s.tab === 'receipts' && <Receipts />}
+          {s.tab === 'recurrence' && <Recurrence />}
           {s.tab === 'history' && <History />}
           {s.tab === 'contracts' && <Contracts />}
         </main>

@@ -140,6 +140,25 @@ describe('浏览器全流程冒烟（jsdom + IndexedDB）', () => {
     fireEvent.click(screen.getByRole('button', { name: /契约与授权/ }));
     await bodyMatches(/字段契约注册表/);
     expect(document.body.textContent).toMatch(/授权六维交集模拟器/);
+
+    // 17) 缺陷复发率：统计 / 谱系 / 匹配 / 样例核验
+    fireEvent.click(screen.getByRole('button', { name: /缺陷复发率/ }));
+    await bodyMatches(/缺陷复发率数据集/);
+    await bodyMatches(/确认复发比例/);
+    // 切到资产谱系并核验通过
+    fireEvent.click(screen.getByRole('button', { name: /资产谱系与里程映射/ }));
+    await bodyMatches(/谱系映射核验通过/);
+    // 切到跨期匹配，能看到关键分类
+    fireEvent.click(screen.getByRole('button', { name: /跨期匹配与分类/ }));
+    await bodyMatches(/后期检出分类/);
+    expect(document.body.textContent).toMatch(/新缺陷/);
+    expect(document.body.textContent).toMatch(/未闭环遗留/);
+    // 样例核验：全部项通过
+    fireEvent.click(screen.getByRole('button', { name: /样例核验/ }));
+    await clickButton(/运行复发率样例核验/);
+    await bodyMatches(/项通过/);
+    expect(document.body.textContent).toMatch(/9 项通过/);
+    expect(document.body.textContent).toMatch(/确认复发/);
   }, 120000);
 
   it('刷新式重新挂载后 IndexedDB 数据仍在（持久化）', async () => {
